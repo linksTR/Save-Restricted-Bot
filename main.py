@@ -106,14 +106,26 @@ def save(client: pyrogram.client.Client, message: pyrogram.types.messages_and_me
 		if comment_match:
 			comment_id = int(comment_match.group(1))
 			
-		# Clean URL for further processing
+		# Clean URL for further processing by removing all parameters
 		clean_url = re.sub(r'\?.*$', '', message.text)
 		
 		datas = clean_url.split("/")
-		temp = datas[-1].split("-")
-		fromID = int(temp[0].strip())
-		try: toID = int(temp[1].strip())
-		except: toID = fromID
+		
+		# Process message ID with proper error handling
+		msg_id_part = datas[-1]
+		temp = msg_id_part.split("-")
+		
+		try:
+			fromID = int(temp[0].strip())
+			try: 
+				toID = int(temp[1].strip())
+			except (IndexError, ValueError): 
+				toID = fromID
+				
+		except ValueError as e:
+			bot.send_message(message.chat.id, f"**Error** : __Invalid message ID format. Make sure the URL is correct.__", reply_to_message_id=message.id)
+			print(f"Error parsing message ID: {e}")
+			return
 
 		for msgid in range(fromID, toID+1):
 			# If this is a comment request, handle it differently
@@ -341,6 +353,8 @@ __send link with '?comment=' parameter to get a specific comment from a channel 
 https://t.me/channelname/123?comment=456
 https://t.me/channelname/123?single&comment=456
 ```
+
+__note: for comments, the bot needs to access the channel's discussion group, so make sure the account of string session can access both the channel and its linked discussion group__
 
 **MULTI POSTS**
 
