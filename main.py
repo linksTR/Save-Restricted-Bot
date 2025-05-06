@@ -7,6 +7,7 @@ import time
 import os
 import threading
 import json
+import re
 
 with open('config.json', 'r') as f: DATA = json.load(f)
 def getenv(var): return os.environ.get(var) or DATA.get(var, None)
@@ -93,15 +94,34 @@ def save(client: pyrogram.client.Client, message: pyrogram.types.messages_and_me
 
 	# getting message
 	elif "https://t.me/" in message.text:
-
-		datas = message.text.split("/")
-		temp = datas[-1].replace("?single","").split("-")
+		# Extract comment id if present in the link
+		comment_id = None
+		single_flag = False
+		
+		# Check for ?single&comment= or ?comment= parameters
+		if "?single" in message.text:
+			single_flag = True
+		
+		comment_match = re.search(r'[?&]comment=(\d+)', message.text)
+		if comment_match:
+			comment_id = int(comment_match.group(1))
+			
+		# Clean URL for further processing
+		clean_url = re.sub(r'\?.*$', '', message.text)
+		
+		datas = clean_url.split("/")
+		temp = datas[-1].split("-")
 		fromID = int(temp[0].strip())
 		try: toID = int(temp[1].strip())
 		except: toID = fromID
 
 		for msgid in range(fromID, toID+1):
-
+			# If this is a comment request, handle it differently
+			if comment_id is not None:
+				# For comment links, we need to get the message from the discussion group
+				handle_comment(message, datas, msgid, comment_id, single_flag)
+				continue
+				
 			# private
 			if "https://t.me/c/" in message.text:
 				chatid = int("-100" + datas[4])
@@ -128,12 +148,12 @@ def save(client: pyrogram.client.Client, message: pyrogram.types.messages_and_me
 			else:
 				username = datas[3]
 
-				try: msg  = bot.get_messages(username,msgid)
+				try: msg = bot.get_messages(username,msgid)
 				except UsernameNotOccupied: 
 					bot.send_message(message.chat.id,f"**The username is not occupied by anyone**", reply_to_message_id=message.id)
 					return
 				try:
-					if '?single' not in message.text:
+					if not single_flag:
 						bot.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
 					else:
 						bot.copy_media_group(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
@@ -148,63 +168,109 @@ def save(client: pyrogram.client.Client, message: pyrogram.types.messages_and_me
 			time.sleep(3)
 
 
+# Handle comment links
+def handle_comment(message: pyrogram.types.messages_and_media.message.Message, datas: list, post_id: int, comment_id: int, single_flag: bool):
+	if acc is None:
+		bot.send_message(message.chat.id, f"**String Session is not Set**", reply_to_message_id=message.id)
+		return
+	
+	try:
+		if "https://t.me/c/" in message.text:  # Private channel
+			channel_id = int("-100" + datas[4])
+			# Get the original channel post to find linked discussion group
+			channel_post = acc.get_messages(channel_id, post_id)
+		else:  # Public channel
+			channel_username = datas[3]
+			# Get the original channel post to find linked discussion group
+			channel_post = acc.get_messages(channel_username, post_id)
+		
+		# Get the linked discussion group
+		if hasattr(channel_post, 'replies') and channel_post.replies:
+			discussion_id = channel_post.replies.channel_id
+			
+			# Try to get the comment message from the discussion group
+			comment_msg = acc.get_messages(discussion_id, comment_id)
+			
+			# Handle based on message type
+			msg_type = get_message_type(comment_msg)
+			
+			# For media groups with single flag
+			if single_flag and hasattr(comment_msg, 'media_group_id'):
+				# Get the whole media group
+				media_group = acc.get_media_group(discussion_id, comment_id)
+				for media_msg in media_group:
+					handle_msg_send(message, media_msg)
+			else:
+				# Regular message
+				handle_msg_send(message, comment_msg)
+		else:
+			bot.send_message(message.chat.id, f"**Could not find discussion group for this channel post**", reply_to_message_id=message.id)
+	except Exception as e:
+		bot.send_message(message.chat.id, f"**Error handling comment**: __{e}__", reply_to_message_id=message.id)
+
+
+# Handle sending any message type
+def handle_msg_send(user_message: pyrogram.types.messages_and_media.message.Message, msg: pyrogram.types.messages_and_media.message.Message):
+	msg_type = get_message_type(msg)
+
+	if "Text" == msg_type:
+		bot.send_message(user_message.chat.id, msg.text, entities=msg.entities, reply_to_message_id=user_message.id)
+		return
+
+	smsg = bot.send_message(user_message.chat.id, '__Downloading__', reply_to_message_id=user_message.id)
+	dosta = threading.Thread(target=lambda:downstatus(f'{user_message.id}downstatus.txt', smsg), daemon=True)
+	dosta.start()
+	file = acc.download_media(msg, progress=progress, progress_args=[user_message,"down"])
+	os.remove(f'{user_message.id}downstatus.txt')
+
+	upsta = threading.Thread(target=lambda:upstatus(f'{user_message.id}upstatus.txt', smsg), daemon=True)
+	upsta.start()
+	
+	if "Document" == msg_type:
+		try:
+			thumb = acc.download_media(msg.document.thumbs[0].file_id)
+		except: thumb = None
+		
+		bot.send_document(user_message.chat.id, file, thumb=thumb, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=user_message.id, progress=progress, progress_args=[user_message,"up"])
+		if thumb != None: os.remove(thumb)
+
+	elif "Video" == msg_type:
+		try: 
+			thumb = acc.download_media(msg.video.thumbs[0].file_id)
+		except: thumb = None
+
+		bot.send_video(user_message.chat.id, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height, thumb=thumb, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=user_message.id, progress=progress, progress_args=[user_message,"up"])
+		if thumb != None: os.remove(thumb)
+
+	elif "Animation" == msg_type:
+		bot.send_animation(user_message.chat.id, file, reply_to_message_id=user_message.id)
+		   
+	elif "Sticker" == msg_type:
+		bot.send_sticker(user_message.chat.id, file, reply_to_message_id=user_message.id)
+
+	elif "Voice" == msg_type:
+		bot.send_voice(user_message.chat.id, file, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=user_message.id, progress=progress, progress_args=[user_message,"up"])
+
+	elif "Audio" == msg_type:
+		try:
+			thumb = acc.download_media(msg.audio.thumbs[0].file_id)
+		except: thumb = None
+			
+		bot.send_audio(user_message.chat.id, file, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=user_message.id, progress=progress, progress_args=[user_message,"up"])   
+		if thumb != None: os.remove(thumb)
+
+	elif "Photo" == msg_type:
+		bot.send_photo(user_message.chat.id, file, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=user_message.id)
+
+	os.remove(file)
+	if os.path.exists(f'{user_message.id}upstatus.txt'): os.remove(f'{user_message.id}upstatus.txt')
+	bot.delete_messages(user_message.chat.id,[smsg.id])
+
+
 # handle private
 def handle_private(message: pyrogram.types.messages_and_media.message.Message, chatid: int, msgid: int):
 		msg: pyrogram.types.messages_and_media.message.Message = acc.get_messages(chatid,msgid)
-		msg_type = get_message_type(msg)
-
-		if "Text" == msg_type:
-			bot.send_message(message.chat.id, msg.text, entities=msg.entities, reply_to_message_id=message.id)
-			return
-
-		smsg = bot.send_message(message.chat.id, '__Downloading__', reply_to_message_id=message.id)
-		dosta = threading.Thread(target=lambda:downstatus(f'{message.id}downstatus.txt',smsg),daemon=True)
-		dosta.start()
-		file = acc.download_media(msg, progress=progress, progress_args=[message,"down"])
-		os.remove(f'{message.id}downstatus.txt')
-
-		upsta = threading.Thread(target=lambda:upstatus(f'{message.id}upstatus.txt',smsg),daemon=True)
-		upsta.start()
-		
-		if "Document" == msg_type:
-			try:
-				thumb = acc.download_media(msg.document.thumbs[0].file_id)
-			except: thumb = None
-			
-			bot.send_document(message.chat.id, file, thumb=thumb, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id, progress=progress, progress_args=[message,"up"])
-			if thumb != None: os.remove(thumb)
-
-		elif "Video" == msg_type:
-			try: 
-				thumb = acc.download_media(msg.video.thumbs[0].file_id)
-			except: thumb = None
-
-			bot.send_video(message.chat.id, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height, thumb=thumb, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id, progress=progress, progress_args=[message,"up"])
-			if thumb != None: os.remove(thumb)
-
-		elif "Animation" == msg_type:
-			bot.send_animation(message.chat.id, file, reply_to_message_id=message.id)
-			   
-		elif "Sticker" == msg_type:
-			bot.send_sticker(message.chat.id, file, reply_to_message_id=message.id)
-
-		elif "Voice" == msg_type:
-			bot.send_voice(message.chat.id, file, caption=msg.caption, thumb=thumb, caption_entities=msg.caption_entities, reply_to_message_id=message.id, progress=progress, progress_args=[message,"up"])
-
-		elif "Audio" == msg_type:
-			try:
-				thumb = acc.download_media(msg.audio.thumbs[0].file_id)
-			except: thumb = None
-				
-			bot.send_audio(message.chat.id, file, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id, progress=progress, progress_args=[message,"up"])   
-			if thumb != None: os.remove(thumb)
-
-		elif "Photo" == msg_type:
-			bot.send_photo(message.chat.id, file, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id)
-
-		os.remove(file)
-		if os.path.exists(f'{message.id}upstatus.txt'): os.remove(f'{message.id}upstatus.txt')
-		bot.delete_messages(message.chat.id,[smsg.id])
+		handle_msg_send(message, msg)
 
 
 # get the type of message
@@ -265,6 +331,15 @@ __send link with '/b/', bot's username and message id, you might want to install
 
 ```
 https://t.me/b/botusername/4321
+```
+
+**FOR COMMENTS**
+
+__send link with '?comment=' parameter to get a specific comment from a channel post__
+
+```
+https://t.me/channelname/123?comment=456
+https://t.me/channelname/123?single&comment=456
 ```
 
 **MULTI POSTS**
