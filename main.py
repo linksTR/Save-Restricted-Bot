@@ -455,6 +455,9 @@ __'/b/', botun kullanici adini ve mesaj ID'sini iceren linki gonder__
 
 **COKLU POSTLAR ICIN**
 
-__Yukarda aciklandigi gibi herkese acik/ozel post linklerini "baslangic - bitis" formatiyla gondererek birden fazla mesaj gonderebilirsin, https://t.me/c/xxxx/101 - 120 gibi__
+__herkese acik/ozel post linklerini "baslangic - bitis" formatiyla gondererek birden fazla mesaj gonderebilirsin, https://t.me/c/xxxx/101 - 120 gibi__
+"""
 
+
+# infinty polling
 bot.run()
