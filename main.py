@@ -457,4 +457,4 @@ __'/b/', botun kullanici adini ve mesaj ID'sini iceren linki gonder__
 
 __Yukarda aciklandigi gibi herkese acik/ozel post linklerini "baslangic - bitis" formatiyla gondererek birden fazla mesaj gonderebilirsin, https://t.me/c/xxxx/101 - 120 gibi__
 
-dev@denujke
+bot.run()
