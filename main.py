@@ -1,6 +1,7 @@
 import pyrogram
 from pyrogram import Client, filters
 from pyrogram.errors import UserAlreadyParticipant, InviteHashExpired, UsernameNotOccupied, PeerIdInvalid, ChannelPrivate
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 import time
 import os
