@@ -108,7 +108,18 @@ def add_channel(client: pyrogram.client.Client, message: pyrogram.types.messages
 
 	# joining chats
 	if "https://t.me/+" in message.text or "https://t.me/joinchat/" in message.text:
-
+    # 4 boşlukla girinti
+    if acc is None:
+        bot.send_message(message.chat.id, f"**String Session is not Set**", reply_to_message_id=message.id)
+        return
+    try:
+        # 4 boşlukla girinti
+        acc.join_chat(message.text)
+    except Exception as e:
+        # 4 boşlukla girinti
+        bot.send_message(message.chat.id, f"**Error** : __{e}__", reply_to_message_id=message.id)
+        return
+	    
 		if acc is None:
 			bot.send_message(message.chat.id,f"**String Session is not Set**", reply_to_message_id=message.id)
 			return
