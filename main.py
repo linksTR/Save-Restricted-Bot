@@ -73,53 +73,9 @@ def send_start(client: pyrogram.client.Client, message: pyrogram.types.messages_
 def save(client: pyrogram.client.Client, message: pyrogram.types.messages_and_media.message.Message):
 	print(message.text)
 
-    # add channel
-@bot.on_message(filters.command(["addchannel"]))
-def add_channel(client: pyrogram.client.Client, message: pyrogram.types.messages_and_media.message.Message):
-    channel_id = message.text.split(' ')[1]  # kanal id'sini al
-    bot.send_message(message.chat.id, f"Kanal eklendi: {channel_id}")
-
-    # kanal id'sini config.json dosyasına kaydet
-    with open('config.json', 'r') as f:
-        data = json.load(f)
-    data['CHANNEL_ID'] = channel_id
-    with open('config.json', 'w') as f:
-        json.dump(data, f)
-
-    # save fonksiyonunu güncelle
-    def save(client: pyrogram.client.Client, message: pyrogram.types.messages_and_media.message.Message):
-        #... diğer kodlar...
-        try:
-            # kanal id'sini config.json dosyasından al
-            with open('config.json', 'r') as f:
-                data = json.load(f)
-            channel_id = data['CHANNEL_ID']
-
-            # bot'un getirdiği içerikleri direkt belirtilen kanala aktarma
-            if "https://t.me/" in message.text:
-                #... diğer kodlar...
-                try:
-                    # kanal id'sini kullanarak içerikleri kanala gönder
-                    bot.copy_message(channel_id, msg.chat.id, msg.id)
-                except Exception as e:
-                    bot.send_message(message.chat.id, f"Error: {e}")
-        except Exception as e:
-            bot.send_message(message.chat.id, f"Error: {e}")
-
 	# joining chats
 	if "https://t.me/+" in message.text or "https://t.me/joinchat/" in message.text:
-    # 4 boşlukla girinti
-    if acc is None:
-        bot.send_message(message.chat.id, f"**String Session is not Set**", reply_to_message_id=message.id)
-        return
-    try:
-        # 4 boşlukla girinti
-        acc.join_chat(message.text)
-    except Exception as e:
-        # 4 boşlukla girinti
-        bot.send_message(message.chat.id, f"**Error** : __{e}__", reply_to_message_id=message.id)
-        return
-	    
+
 		if acc is None:
 			bot.send_message(message.chat.id,f"**String Session is not Set**", reply_to_message_id=message.id)
 			return
