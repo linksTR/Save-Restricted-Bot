@@ -14,6 +14,9 @@ def getenv(var): return os.environ.get(var) or DATA.get(var, None)
 bot_token = getenv("TOKEN") 
 api_hash = getenv("HASH") 
 api_id = getenv("ID")
+# YENİ: Forward edilecek kanal ID'si - config.json'a "FORWARD_CHANNEL" ekleyin veya environment variable olarak ayarlayın
+forward_channel_id = getenv("FORWARD_CHANNEL")  # Örnek: -1001234567890 (kanal ID'si)
+
 bot = Client("mybot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
 
 ss = getenv("STRING")
@@ -62,10 +65,66 @@ def progress(current, total, message, type):
 		fileup.write(f"{current * 100 / total:.1f}%")
 
 
+# YENİ FONKSİYON: Medyayı belirtilen kanala forward et
+def forward_to_channel(file_path, msg_type, msg, original_message):
+	"""Medyayı belirtilen kanala forward eder"""
+	if forward_channel_id is None:
+		return  # Forward kanal ID'si ayarlanmamışsa çık
+	
+	try:
+		if msg_type == "Document":
+			try:
+				thumb = acc.download_media(msg.document.thumbs[0].file_id) if msg.document.thumbs else None
+			except: 
+				thumb = None
+			
+			bot.send_document(forward_channel_id, file_path, thumb=thumb, caption=msg.caption, caption_entities=msg.caption_entities)
+			if thumb: os.remove(thumb)
+
+		elif msg_type == "Video":
+			try: 
+				thumb = acc.download_media(msg.video.thumbs[0].file_id) if msg.video.thumbs else None
+			except: 
+				thumb = None
+
+			bot.send_video(forward_channel_id, file_path, duration=msg.video.duration, width=msg.video.width, height=msg.video.height, thumb=thumb, caption=msg.caption, caption_entities=msg.caption_entities)
+			if thumb: os.remove(thumb)
+
+		elif msg_type == "Animation":
+			bot.send_animation(forward_channel_id, file_path)
+			   
+		elif msg_type == "Sticker":
+			bot.send_sticker(forward_channel_id, file_path)
+
+		elif msg_type == "Voice":
+			bot.send_voice(forward_channel_id, file_path, caption=msg.caption, caption_entities=msg.caption_entities)
+
+		elif msg_type == "Audio":
+			try:
+				thumb = acc.download_media(msg.audio.thumbs[0].file_id) if msg.audio.thumbs else None
+			except: 
+				thumb = None
+				
+			bot.send_audio(forward_channel_id, file_path, caption=msg.caption, caption_entities=msg.caption_entities)   
+			if thumb: os.remove(thumb)
+
+		elif msg_type == "Photo":
+			bot.send_photo(forward_channel_id, file_path, caption=msg.caption, caption_entities=msg.caption_entities)
+
+		elif msg_type == "Text":
+			bot.send_message(forward_channel_id, msg.text, entities=msg.entities)
+
+		print(f"✅ Medya başarıyla kanala forward edildi: {msg_type}")
+		
+	except Exception as e:
+		print(f"❌ Kanala forward etme hatası: {e}")
+
+
 # start command
 @bot.on_message(filters.command(["start"]))
 def send_start(client: pyrogram.client.Client, message: pyrogram.types.messages_and_media.message.Message):
-	bot.send_message(message.chat.id, f"__Hg kardes**{message.from_user.mention}**, içerik kısıtlaması olan kanallardan içeriklere iş koyuyorum__\n\n{USAGE}",
+	forward_status = f"\n\n**🔄 Auto Forward: {'Aktif' if forward_channel_id else 'Pasif'}**" if forward_channel_id else ""
+	bot.send_message(message.chat.id, f"__Hg kardes**{message.from_user.mention}**, içerik kısıtlaması olan kanallardan içeriklere iş koyuyorum__{forward_status}\n\n{USAGE}",
 	reply_markup=InlineKeyboardMarkup([[ InlineKeyboardButton("bir denujke yapımı", url="https://www.youtube.com/watch?v=MJK5VTEPD-w")]]), reply_to_message_id=message.id)
 
 
@@ -135,8 +194,22 @@ def save(client: pyrogram.client.Client, message: pyrogram.types.messages_and_me
 				try:
 					if '?single' not in message.text:
 						bot.copy_message(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
+						# YENİ: Public mesajları da kanala forward et
+						if forward_channel_id:
+							try:
+								bot.copy_message(forward_channel_id, msg.chat.id, msg.id)
+								print("✅ Public mesaj kanala forward edildi")
+							except Exception as e:
+								print(f"❌ Public mesaj forward hatası: {e}")
 					else:
 						bot.copy_media_group(message.chat.id, msg.chat.id, msg.id, reply_to_message_id=message.id)
+						# YENİ: Media group'u da kanala forward et
+						if forward_channel_id:
+							try:
+								bot.copy_media_group(forward_channel_id, msg.chat.id, msg.id)
+								print("✅ Media group kanala forward edildi")
+							except Exception as e:
+								print(f"❌ Media group forward hatası: {e}")
 				except:
 					if acc is None:
 						bot.send_message(message.chat.id,f"**String Session is not Set**", reply_to_message_id=message.id)
@@ -155,6 +228,9 @@ def handle_private(message: pyrogram.types.messages_and_media.message.Message, c
 
 		if "Text" == msg_type:
 			bot.send_message(message.chat.id, msg.text, entities=msg.entities, reply_to_message_id=message.id)
+			# YENİ: Text mesajını da kanala forward et
+			if forward_channel_id:
+				forward_to_channel(None, msg_type, msg, message)
 			return
 
 		smsg = bot.send_message(message.chat.id, '__Downloading__', reply_to_message_id=message.id)
@@ -201,6 +277,10 @@ def handle_private(message: pyrogram.types.messages_and_media.message.Message, c
 
 		elif "Photo" == msg_type:
 			bot.send_photo(message.chat.id, file, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id)
+
+		# YENİ: İşlem tamamlandıktan sonra medyayı kanala forward et
+		if forward_channel_id:
+			forward_to_channel(file, msg_type, msg, message)
 
 		os.remove(file)
 		if os.path.exists(f'{message.id}upstatus.txt'): os.remove(f'{message.id}upstatus.txt')
@@ -277,8 +357,12 @@ https://t.me/c/xxxx/101 - 120
 ```
 
 __+18 içeriklere iş koymak yasaktır.__
+
+**🔄 Auto Forward Özelliği Aktif!**
+__Tüm forward edilen içerikler otomatik olarak belirlenen kanala da gönderilir.__
 """
 
 
 # infinty polling
 bot.run()
+
